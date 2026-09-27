@@ -1,0 +1,25 @@
+services:
+  broker:
+    container_name: mqtt_broker
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+
+  mqtt_listener:
+    depends_on:
+      - broker
+    container_name: mqtt_listener
+    build: 
+      context: .
+      dockerfile: "Dockerfile"
+      target: "Dev"
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
