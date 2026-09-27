@@ -23,3 +23,11 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+
+networks:
+  bridge_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.0.1.1/24 

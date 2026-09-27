@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y \
 COPY . .
 
 RUN g++ -o listener mqttListener.cpp -lpaho-mqttpp3 -lpaho-mqtt3as
-CMD ["./listener"]
 
 FROM base as Prod
 
