@@ -3,6 +3,7 @@
 *.bin
 *.elf
 *.map
+*listener
 
 # Executables
 prod-listener/listener
@@ -13,6 +14,7 @@ esp32-client/build/
 .idea/
 *.swp
 *.swo
+.devcontainer
 
 # OS files
 .DS_Store
