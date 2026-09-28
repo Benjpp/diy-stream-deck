@@ -1,0 +1,25 @@
+# Compiled objects
+*.o
+*.bin
+*.elf
+*.map
+
+# Executables
+prod-listener/listener
+esp32-client/build/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Mosquitto data
+mosquitto/data/*
+mosquitto/log/*
+!mosquitto/data/.gitkeep
+!mosquitto/log/.gitkeep
