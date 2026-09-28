@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     libpaho-mqtt-dev \
     libpaho-mqttpp-dev \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .
@@ -15,6 +16,12 @@ COPY . .
 RUN g++ -o listener mqttListener.cpp -lpaho-mqttpp3 -lpaho-mqtt3as
 
 FROM base as Prod
+
+RUN apt-get update && apt-get install -y \
+    libpaho-mqtt1 \
+    libpaho-mqttpp3 \
+    docker.io \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=Dev /app/listener .
 CMD ["./listener"]
