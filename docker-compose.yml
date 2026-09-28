@@ -29,10 +29,24 @@ services:
     networks:
       - bridge_network
 
+  esp32-build:
+    image: espressif/idf:latest
+    volumes:
+      - .:/project
+    working_dir: /project/esp32-client
+    environment:
+      - IDF_PATH=/opt/esp/idf
+    privileged: true
+    # Added for WSL/usbipd: mapping the device from WSL into the container
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    entrypoint: /bin/bash -c ". /opt/esp/idf/export.sh && exec \"$@\""
+    command: ["bash"]
+
 networks:
   bridge_network:
     driver: bridge
     ipam:
       driver: default
       config:
-        - subnet: 172.0.1.0/24 
+        - subnet: 172.0.1.0/24
