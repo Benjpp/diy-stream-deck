@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <vector>
 #include "mqtt/async_client.h"
-#include "commands.h"
+#include "../../esp32-client/include/commands.h"
 
 #define PORT 1883
 
