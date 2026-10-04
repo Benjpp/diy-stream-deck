@@ -39,7 +39,8 @@
 // Mqtt utils 
 #define MQTT_QOS 1
 #define MQTT_RETAIN 0
-static const char *MQTT_TOPIC = "homelab/stream-deck";
+const char *MQTT_TOPIC = "homelab/stream-deck";
+const char *MQTT_BROKER_URI = CONFIG_BROKER_URI; 
 
 // Tags for ESP_LOG macros
 static const char *TAG_WIFI = "WIFI";
@@ -192,7 +193,7 @@ esp_err_t wifiConnect(){
 esp_err_t mqttStart(){
     esp_mqtt_client_config_t mqtt_client_config = {
         {
-            {"mqtt://192.168.1.132:1883"},
+            {MQTT_BROKER_URI},
         }
     };
     
