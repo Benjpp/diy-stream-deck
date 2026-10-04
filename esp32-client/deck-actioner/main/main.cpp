@@ -2,6 +2,7 @@
 #include <cstring>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_event_base.h"
@@ -21,40 +22,80 @@
 #include "sdkconfig.h"
 #include "esp_wifi.h"
 #include "soc/gpio_num.h"
+#include "mqtt_client.h"
 
-#define button_1 GPIO_NUM_0
-#define button_2 GPIO_NUM_1
-#define button_3 GPIO_NUM_4
-#define button_4 GPIO_NUM_3
+#define BUTTON_1 GPIO_NUM_0
+#define BUTTON_2 GPIO_NUM_1
+#define BUTTON_3 GPIO_NUM_4
+#define BUTTON_4 GPIO_NUM_3
 
-#define wifi_connect_led GPIO_NUM_6
-#define wifi_disconnect_led GPIO_NUM_5
+// Status LEDs
+#define WIFI_CONNECT_LED            GPIO_NUM_6        // Green
+#define NETWORK_ERROR_LED           GPIO_NUM_5        // Red
+#define MQTT_PUBLISH_SUCCESS_LED    GPIO_NUM_7        // Blue
 
-#define ESP_WIFI_MAXIMUM_RETRY 5
+#define ESP_WIFI_MAXIMUM_RETRY 15
+
+// Mqtt utils 
+#define MQTT_QOS 1
+#define MQTT_RETAIN 0
+static const char *MQTT_TOPIC = "homelab/stream-deck";
 
 // Tags for ESP_LOG macros
 static const char *TAG_WIFI = "WIFI";
+static const char *TAG_MQTT = "MQTT";
 static const char *TAG_MAIN = "MAIN";
 
 // Event Group bits for Wi-Fi connection state
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-// Array with the pins to iterate over them
-const int button_pins[CMD_COUNT] = {button_1, button_2, button_3, button_4};
+struct button{
+    gpio_num_t gpio_pin;
+    CMD button_action;
+    bool pressed = false;
+};
+
+// Global vars definitions. Some shouldnt be global? :V
+struct button buttons[CMD_COUNT] = {
+    {BUTTON_1, RESTART_CONTAINERS},
+    {BUTTON_2, STOP_CONTAINERS},
+    {BUTTON_3, START_CONTAINERS},
+    {BUTTON_4, RETURN_TEMP}
+};
 bool button_pressed[CMD_COUNT];
 static int s_retry_num = 0;
+
+esp_mqtt_client_handle_t mqtt_client_handle;
 
 // FreeRTOS event group signal handle
 static EventGroupHandle_t s_wifi_event_group;
 
+// Auxiliar functions definition
+void setWifiStatusLED(bool isConnected);
+esp_err_t sendCmd(CMD cmd);
+void showSendCmdResponse(esp_err_t error);
+
 void setWifiStatusLED(bool isConnected){
     if(isConnected == true){
-        gpio_set_level(wifi_connect_led, 1);
-        gpio_set_level(wifi_disconnect_led, 0);
+        gpio_set_level(WIFI_CONNECT_LED, 1);
+        gpio_set_level(NETWORK_ERROR_LED, 0);
     }else{
-        gpio_set_level(wifi_connect_led, 0);
-        gpio_set_level(wifi_disconnect_led, 1);
+        gpio_set_level(WIFI_CONNECT_LED, 0);
+        gpio_set_level(NETWORK_ERROR_LED, 1);
+    }
+}
+
+void showSendCmdResponse(esp_err_t error){
+    // If there was a error response, we blink the network error led. On OK response, blink mqtt success led.
+    if(error == ESP_OK){
+        gpio_set_level(MQTT_PUBLISH_SUCCESS_LED, 1);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+        gpio_set_level(MQTT_PUBLISH_SUCCESS_LED, 0);
+    }else{
+        gpio_set_level(NETWORK_ERROR_LED, 1);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+        gpio_set_level(NETWORK_ERROR_LED, 0);
     }
 }
 
@@ -148,23 +189,37 @@ esp_err_t wifiConnect(){
     }
 }
 
+esp_err_t mqttStart(){
+    esp_mqtt_client_config_t mqtt_client_config = {
+        {
+            {"mqtt://192.168.1.132:1883"},
+        }
+    };
+    
+    mqtt_client_handle = esp_mqtt_client_init(&mqtt_client_config);
+    ESP_LOGI(TAG_MQTT, "Mqtt client initialized. Starting client.");
+
+    esp_err_t error;
+    if((error = esp_mqtt_client_start(mqtt_client_handle)) != ESP_OK){
+        return error;
+    }
+
+    ESP_LOGI(TAG_MQTT, "Mqtt client started. Returning to main flow of execution.");
+    return ESP_OK;
+}
+
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG_MAIN, "Total number of commands detected: %d", CMD_COUNT);
     ESP_LOGI(TAG_MAIN, "Prepping GPIO pins...");
 
     gpio_config_t gpio_conf = {
-        .pin_bit_mask = (1ULL << button_1) | (1ULL << button_2) | (1ULL << button_3) | (1ULL << button_4),
+        .pin_bit_mask = (1ULL << BUTTON_1) | (1ULL << BUTTON_2) | (1ULL << BUTTON_3) | (1ULL << BUTTON_4),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
-
-    ESP_LOGI(TAG_MAIN, "Setting all buttons to not pressed...");
-    for(int i = 0; i < CMD_COUNT; i++){
-        button_pressed[i] = false;
-    }
 
     esp_err_t error;
     if((error = gpio_config(&gpio_conf)) != ESP_OK){
@@ -173,7 +228,7 @@ extern "C" void app_main(void)
     }
 
     gpio_conf = {
-        .pin_bit_mask = (1ULL << wifi_disconnect_led) | (1ULL << wifi_connect_led),
+        .pin_bit_mask = (1ULL << NETWORK_ERROR_LED) | (1ULL << WIFI_CONNECT_LED) | (1ULL << MQTT_PUBLISH_SUCCESS_LED),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -194,6 +249,12 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG_MAIN, "Connected to Wi-Fi network!");
     }
 
+    ESP_LOGI(TAG_MQTT, "Starting MQTT service");
+    if(mqttStart() != ESP_OK){
+        ESP_LOGI(TAG_MQTT, "Mqtt service could not be started. Restarting board.\n");
+        esp_restart();
+    }
+
     ESP_LOGI(TAG_MAIN, "Starting loop...");
 
     while(true){
@@ -202,19 +263,37 @@ extern "C" void app_main(void)
 
         for(int i = 0; i < CMD_COUNT; i++) {
             // Check if the current pin is pressed
-            bool is_pressed = gpio_input & (1ULL << button_pins[i]);
+            bool is_pressed = gpio_input & (1ULL << buttons[i].gpio_pin);
 
-            if(is_pressed && !button_pressed[i]) {
+            if(is_pressed && !buttons[i].pressed) {
                 ESP_LOGI(TAG_MAIN, "Button %d pressed", i + 1);
-                button_pressed[i] = true;
+                buttons[i].pressed = true;
+                if((error = sendCmd(buttons[i].button_action)) != ESP_OK){
+                    ESP_LOGI(TAG_MQTT, "Error sending cmd");
+                }
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                showSendCmdResponse(error);
             }
-            else if(!is_pressed && button_pressed[i]) {
+            else if(!is_pressed && buttons[i].pressed) {
                 ESP_LOGI(TAG_MAIN, "Release button %d...", i + 1);
-                button_pressed[i] = false;
+                buttons[i].pressed = false;
                 vTaskDelay(50 / portTICK_PERIOD_MS); // Debounce on release
             }
         }
 
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
+}
+
+esp_err_t sendCmd(CMD cmd){
+    uint32_t cmdVal = cmd;
+    const std::string cmdStr = std::to_string(cmdVal);
+    const char *cmdChar = cmdStr.c_str();
+    int status = esp_mqtt_client_publish(mqtt_client_handle, MQTT_TOPIC, cmdChar, sizeof(CMD), MQTT_QOS, MQTT_RETAIN);
+    if(MQTT_QOS != 0 && status < 0){
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG_MQTT, "CMD Sent succesfully.");
+    return ESP_OK;
 }
