@@ -1,4 +1,4 @@
-FROM debian:latest AS base
+FROM debian:12.1 as base
 WORKDIR /app
 
 FROM base as Dev
@@ -18,8 +18,8 @@ RUN g++ -o listener ./prod-listener/src/mqttListener.cpp -lpaho-mqttpp3 -lpaho-m
 FROM base as Prod
 
 RUN apt-get update && apt-get install -y \
-    libpaho-mqtt1 \
-    libpaho-mqttpp3 \
+    libpaho-mqtt1.3 \
+    libpaho-mqttpp3-1 \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
