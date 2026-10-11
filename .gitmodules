@@ -1,0 +1,3 @@
+[submodule "diy-stream-deck-pcb"]
+	path = diy-stream-deck-pcb
+	url = git@github.com:Benjpp/diy-stream-deck-pcb.git
